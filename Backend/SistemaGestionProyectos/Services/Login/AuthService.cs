@@ -10,56 +10,71 @@ namespace SistemaGestionProyectos.Services.Login
 {
     public class AuthService : IAuthService
     {
-        private readonly IUsuarioRepository _usuarioRepository;
         private readonly IConfiguration _configuration;
+        private readonly IHttpClientFactory _httpClientFactory;
 
-        public AuthService(IUsuarioRepository usuarioRepository, IConfiguration configuration)
+        public AuthService(IConfiguration configuration, IHttpClientFactory httpClientFactory)
         {
-            _usuarioRepository = usuarioRepository;
             _configuration = configuration;
+            _httpClientFactory = httpClientFactory;
         }
 
         public async Task<LoginResponse> LoginAsync(LoginRequest request)
         {
-            var usuario = await _usuarioRepository.ObtenerPorUsuarioAsync(request.Usuario);
+            var client = _httpClientFactory.CreateClient("SASI");
 
-            if (usuario == null || !await _usuarioRepository.ValidarContrasenaAsync(usuario.ContrasenaHash, request.Contrasena))
+            var sasiRequest = new SasiLoginRequest
             {
-                throw new UnauthorizedAccessException("Usuario o contraseña incorrectos");
-            }
-
-            var token = GenerarToken(usuario);
-            return new LoginResponse
-            {
-                Token = token,
-                Correo = usuario.Correo,
-                NombreCompleto = usuario.NombreCompleto,
-                Rol = usuario.Rol
-            };
-        }
-
-        private string GenerarToken(Usuario usuario)
-        {
-            var claims = new[]
-            {
-                new Claim(JwtRegisteredClaimNames.Sub, usuario.NombreUsuario),
-                new Claim("IdUsuario", usuario.IdUsuario.ToString()),
-                new Claim(ClaimTypes.Role, usuario.Rol),
-                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+                UserName = request.Usuario,
+                Password = request.Contrasena
             };
 
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
-            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-
-            var token = new JwtSecurityToken(
-                issuer: _configuration["Jwt:Issuer"],
-                audience: _configuration["Jwt:Audience"],
-                claims: claims,
-                expires: DateTime.Now.AddHours(1),
-                signingCredentials: creds
+            var httpResponse = await client.PostAsJsonAsync(
+                "SASI/api/Auth/login",
+                sasiRequest
             );
 
-            return new JwtSecurityTokenHandler().WriteToken(token);
+            var sasiResponse = await httpResponse.Content
+                .ReadFromJsonAsync<SasiLoginResponse>();
+
+            if (!httpResponse.IsSuccessStatusCode)
+            {
+                return new LoginResponse
+                {
+                    Success = false,
+                    Message = sasiResponse?.Message ?? "Credenciales inválidas",
+                    IntentosRestantes = sasiResponse?.IntentosRestantes
+                };
+            }
+
+            if (sasiResponse.Usuario == null)
+            {
+                return new LoginResponse
+                {
+                    Success = false,
+                    Message = "No se pudo obtener la información del usuario desde SASI"
+                };
+            }
+
+            // 🔎 Buscar este sistema en particular
+            var sistemaProyectos = sasiResponse.Usuario.Sistemas
+                .FirstOrDefault(s => s.Nombre.Contains("Gestion de Proyectos"));
+
+            if (sistemaProyectos == null)
+                throw new UnauthorizedAccessException(
+                    "No tiene acceso al Sistema de Gestión de Proyectos"
+                );
+
+            var rolPrincipal = sistemaProyectos.Roles
+                .FirstOrDefault(r => r.EsPrincipal);
+
+            return new LoginResponse
+            {
+                Token = sasiResponse.Token,
+                NombreCompleto = sasiResponse.Usuario.NombreCompleto,
+                Correo = sasiResponse.Usuario.Email,
+                Rol = rolPrincipal?.NombreRol ?? "SIN_ROL"
+            };
         }
     }
 }

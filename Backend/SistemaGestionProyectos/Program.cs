@@ -55,6 +55,11 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
+builder.Services.AddHttpClient("SASI", client =>
+{
+    client.BaseAddress = new Uri("https://localhost:44337/");
+});
+
 builder.Services.AddControllers()
         .AddJsonOptions(options =>
         {
