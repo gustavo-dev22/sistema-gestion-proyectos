@@ -27,5 +27,7 @@ namespace SistemaGestionProyectos.DTOs.Login
 
         [JsonPropertyName("message")]
         public string Message { get; set; }
+
+        public string? Codigo { get; set; }
     }
 }

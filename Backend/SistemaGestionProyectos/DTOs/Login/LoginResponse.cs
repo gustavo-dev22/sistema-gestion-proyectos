@@ -10,5 +10,6 @@
         public string NombreCompleto { get; set; }
         public string Correo { get; set; }
         public string Rol { get; set; }
+        public SasiUsuario? Usuario { get; set; }
     }
 }

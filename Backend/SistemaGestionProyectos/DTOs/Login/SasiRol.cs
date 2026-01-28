@@ -6,5 +6,6 @@
         public string NombreRol { get; set; }
         public bool Activo { get; set; }
         public bool EsPrincipal { get; set; }
+        public List<SasiObjeto> Objetos { get; set; } = new();
     }
 }

@@ -1,3 +1,6 @@
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -6,7 +9,6 @@ using SistemaGestionProyectos.Dominio.Repositories;
 using SistemaGestionProyectos.Infraestructura.Datos;
 using SistemaGestionProyectos.Infraestructura.Repositories;
 using SistemaGestionProyectos.Services.Login;
-using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -63,7 +65,8 @@ builder.Services.AddHttpClient("SASI", client =>
 builder.Services.AddControllers()
         .AddJsonOptions(options =>
         {
-            options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.Preserve;
+            options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+            options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
         });
 
 builder.Services.AddControllers();

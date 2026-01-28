@@ -23,57 +23,105 @@ namespace SistemaGestionProyectos.Services.Login
         {
             var client = _httpClientFactory.CreateClient("SASI");
 
-            var sasiRequest = new SasiLoginRequest
-            {
-                UserName = request.Usuario,
-                Password = request.Contrasena
-            };
-
             var httpResponse = await client.PostAsJsonAsync(
                 "SASI/api/Auth/login",
-                sasiRequest
-            );
+                new SasiLoginRequest
+                {
+                    UserName = request.Usuario,
+                    Password = request.Contrasena
+                });
 
             var sasiResponse = await httpResponse.Content
                 .ReadFromJsonAsync<SasiLoginResponse>();
 
-            if (!httpResponse.IsSuccessStatusCode)
+            // 1️⃣ Error técnico
+            if (!httpResponse.IsSuccessStatusCode || sasiResponse == null)
             {
                 return new LoginResponse
                 {
                     Success = false,
-                    Message = sasiResponse?.Message ?? "Credenciales inválidas",
-                    IntentosRestantes = sasiResponse?.IntentosRestantes
+                    Message = "Error al comunicarse con el servicio de autenticación"
                 };
             }
 
-            if (sasiResponse.Usuario == null)
+            // 2️⃣ Login FALLIDO → manejar SOLO por Código
+            if (!sasiResponse.Success)
+            {
+                // 🔒 Cuenta bloqueada
+                if (sasiResponse.Codigo == "CUENTA_BLOQUEADA")
+                {
+                    return new LoginResponse
+                    {
+                        Success = false,
+                        Message = sasiResponse.Message ?? "La cuenta se encuentra bloqueada"
+                    };
+                }
+
+                // 🔑 Password incorrecta → SOLO aquí mostrar intentos
+                if (sasiResponse.Codigo == "PASSWORD_INCORRECTA")
+                {
+                    return new LoginResponse
+                    {
+                        Success = false,
+                        Message = "Contraseña incorrecta",
+                        IntentosRestantes = sasiResponse.IntentosRestantes
+                    };
+                }
+
+                // 👤 Usuario no existe / credenciales inválidas
+                if (sasiResponse.Codigo == "CREDENCIALES_INCORRECTAS")
+                {
+                    return new LoginResponse
+                    {
+                        Success = false,
+                        Message = "Credenciales incorrectas"
+                    };
+                }
+
+                // fallback defensivo
+                return new LoginResponse
+                {
+                    Success = false,
+                    Message = sasiResponse.Message ?? "Error de autenticación"
+                };
+            }
+
+            // 3️⃣ Login OK → validar acceso a sistemas
+            var sistemas = sasiResponse.Usuario?.Sistemas;
+
+            if (sistemas == null || !sistemas.Any())
             {
                 return new LoginResponse
                 {
                     Success = false,
-                    Message = "No se pudo obtener la información del usuario desde SASI"
+                    Message = "No tiene sistemas asignados"
                 };
             }
 
-            // 🔎 Buscar este sistema en particular
-            var sistemaProyectos = sasiResponse.Usuario.Sistemas
+            var sistemaProyectos = sistemas
                 .FirstOrDefault(s => s.Nombre.Contains("Gestion de Proyectos"));
 
             if (sistemaProyectos == null)
-                throw new UnauthorizedAccessException(
-                    "No tiene acceso al Sistema de Gestión de Proyectos"
-                );
+            {
+                return new LoginResponse
+                {
+                    Success = false,
+                    Message = "No tiene acceso al Sistema de Gestión de Proyectos"
+                };
+            }
 
-            var rolPrincipal = sistemaProyectos.Roles
+            // 4️⃣ Login exitoso
+            var rolPrincipal = sistemaProyectos.Roles?
                 .FirstOrDefault(r => r.EsPrincipal);
 
             return new LoginResponse
             {
+                Success = true,
                 Token = sasiResponse.Token,
                 NombreCompleto = sasiResponse.Usuario.NombreCompleto,
                 Correo = sasiResponse.Usuario.Email,
-                Rol = rolPrincipal?.NombreRol ?? "SIN_ROL"
+                Rol = rolPrincipal?.NombreRol ?? "SIN_ROL",
+                Usuario = sasiResponse.Usuario
             };
         }
     }

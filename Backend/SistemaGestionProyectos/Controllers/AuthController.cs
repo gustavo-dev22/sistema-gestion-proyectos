@@ -21,11 +21,19 @@ namespace SistemaGestionProyectos.Controllers
             try
             {
                 var response = await _authService.LoginAsync(request);
+
+                // Siempre devolver 200, con Success=true/false
                 return Ok(response);
             }
-            catch (UnauthorizedAccessException ex)
+            catch (Exception ex)
             {
-                return Unauthorized(new { mensaje = ex.Message });
+                // Solo error real de servidor
+                return StatusCode(500, new
+                {
+                    Success = false,
+                    Message = "Error inesperado. Intenta más tarde.",
+                    Detalle = ex.Message
+                });
             }
         }
     }
